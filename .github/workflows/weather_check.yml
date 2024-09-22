@@ -3,7 +3,7 @@ name: Daily Weather Check
 on:
   schedule:
     # Runs at 6 PM every day
-    - cron: "0 18 * * *"
+    - cron: "0 22 * * *"
   push:
     branches:
       - main  # Change this to the branch you want to run the workflow on push
