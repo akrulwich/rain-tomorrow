@@ -13,7 +13,7 @@ APP_PASSWORD = os.getenv('APP_PASSWORD')
 
 def get_weather_forecast():
     # Get the weather forecast for the next day using the 5 Day / 3 Hour Forecast API
-    url = f"https://api.openweathermap.org/data/2.5/forecast?lat={LATITUDE}&lon={LONGITUDE}&appid={API_KEY}&units=metric"
+    url = f"https://api.openweathermap.org/data/2.5/forecast?lat={LATITUDE}&lon={LONGITUDE}&appid={API_KEY}&units=imperial"
     
     response = requests.get(url)
     
@@ -108,11 +108,9 @@ def check_rain_forecast():
         
         if rain_expected:
             subject = "Weather Alert: Rain Expected Tomorrow"
-        else:
-            subject = "Weather Update: No Rain Expected Tomorrow"
+            # Send email with detailed weather report
+            send_email(subject, email_body)
         
-        # Send email with detailed weather report
-        send_email(subject, email_body)
     else:
         print("No weather data available for tomorrow.")
 
