@@ -11,8 +11,36 @@ LONGITUDE = os.getenv('LONGITUDE')
 EMAIL = os.getenv('EMAIL')
 APP_PASSWORD = os.getenv('APP_PASSWORD')
 
+def get_time_period(hour):
+    """Convert hour to human-readable time period based on 3-hour intervals."""
+    if 0 <= hour < 3:
+        return "late night"
+    elif 3 <= hour < 6:
+        return "early morning"
+    elif 6 <= hour < 9:
+        return "morning"
+    elif 9 <= hour < 12:
+        return "late morning"
+    elif 12 <= hour < 15:
+        return "early afternoon"
+    elif 15 <= hour < 18:
+        return "late afternoon"
+    elif 18 <= hour < 21:
+        return "early evening"
+    else:
+        return "late evening"
+
+def get_wind_description(wind_speed):
+    """Classify wind speed into low, medium, or high winds."""
+    if wind_speed <= 10:
+        return "low winds"
+    elif 10 < wind_speed <= 20:
+        return "medium winds"
+    else:
+        return "high winds"
+
 def get_weather_forecast():
-    # Get the weather forecast for the next day using the 5 Day / 3 Hour Forecast API
+    # Get the weather forecast for the next 5 days using the 5 Day / 3 Hour Forecast API
     url = f"https://api.openweathermap.org/data/2.5/forecast?lat={LATITUDE}&lon={LONGITUDE}&appid={API_KEY}&units=imperial"
     
     response = requests.get(url)
@@ -24,43 +52,47 @@ def get_weather_forecast():
     data = response.json()
     forecasts = data['list']
     
-    # Get tomorrow's date
+    # Get today's, tomorrow's, and the day after tomorrow's dates
+    today = datetime.now().date()
     tomorrow = (datetime.now() + timedelta(days=1)).date()
+    day_after_tomorrow = (datetime.now() + timedelta(days=2)).date()
     
-    # Store detailed weather data for tomorrow
+    # Store detailed weather data for the next three days
     weather_report = []
+    rain_forecasted_for_tomorrow = False
     
-    # Check for weather data for tomorrow
+    # Check for weather data
     for forecast in forecasts:
         forecast_time = forecast['dt_txt']
         forecast_date = datetime.strptime(forecast_time, "%Y-%m-%d %H:%M:%S").date()
+        forecast_hour = datetime.strptime(forecast_time, "%Y-%m-%d %H:%M:%S").hour
         
-        if forecast_date == tomorrow:
+        # Only include forecasts for today, tomorrow, and the day after
+        if forecast_date in (today, tomorrow, day_after_tomorrow):
             # Extract weather details
             weather_main = forecast['weather'][0]['main']
             description = forecast['weather'][0]['description']
-            temperature = forecast['main']['temp']
-            humidity = forecast['main']['humidity']
+            temperature = round(forecast['main']['temp'])  # Round temperature
             wind_speed = forecast['wind']['speed']
             
-            # Store detailed weather information for each 3-hour period
+            # Check if rain is forecasted for tomorrow
+            if forecast_date == tomorrow and 'rain' in weather_main.lower():
+                rain_forecasted_for_tomorrow = True
+            
+            # Store simplified weather information
             weather_report.append({
-                'time': forecast_time,
+                'date': forecast_date,
+                'time_period': get_time_period(forecast_hour),
                 'main': weather_main,
                 'description': description,
                 'temperature': temperature,
-                'humidity': humidity,
                 'wind_speed': wind_speed
             })
-            
-            # Check if rain is expected during this period
-            if "rain" in weather_main.lower() or "rain" in description.lower():
-                print(f"Rain forecasted at {forecast_time}: {description}")
     
-    return weather_report
+    return weather_report, rain_forecasted_for_tomorrow
 
 def send_email(subject, body):
-    msg = MIMEText(body)
+    msg = MIMEText(body, "html")
     msg['Subject'] = subject
     msg['From'] = EMAIL
     msg['To'] = EMAIL
@@ -75,44 +107,61 @@ def send_email(subject, body):
         print(f"Failed to send email: {e}")
 
 def create_weather_report(weather_report):
-    # Create a detailed weather report from the data
-    email_body = "Detailed Weather Forecast for Tomorrow:\n\n"
+    """Create a human-readable weather report with bullet points in HTML."""
+    email_body = "<h2>Weather Forecast</h2>\n<ul>\n"
     
+    # Group the weather data by day and time period
+    grouped_report = {}
     for report in weather_report:
-        time = report['time']
-        main_weather = report['main']
-        description = report['description']
-        temperature = report['temperature']
-        humidity = report['humidity']
-        wind_speed = report['wind_speed']
+        date_str = report['date'].strftime('%A')
+        time_period = report['time_period']
         
-        email_body += f"Time: {time}\n"
-        email_body += f"Weather: {main_weather} ({description})\n"
-        email_body += f"Temperature: {temperature}°C\n"
-        email_body += f"Humidity: {humidity}%\n"
-        email_body += f"Wind Speed: {wind_speed} m/s\n"
-        email_body += "-" * 40 + "\n"
+        if date_str not in grouped_report:
+            grouped_report[date_str] = {}
+        
+        if time_period not in grouped_report[date_str]:
+            grouped_report[date_str][time_period] = report
+    
+    # Create a two-level list
+    for day, time_periods in grouped_report.items():
+        email_body += f"<li><strong>{day}</strong>\n<ul>\n"
+        for time_period, report in time_periods.items():
+            temperature = report['temperature']
+            description = report['description']
+            wind_speed = report['wind_speed']
+            
+            # Classify the wind
+            wind_description = get_wind_description(wind_speed)
+            
+            # Bold the rain text if there is rain in the description
+            if "rain" in description.lower():
+                description = f"<strong>{description}</strong>"
+            
+            # Add the forecast for each time period
+            email_body += (
+                f"<li><strong>{time_period.capitalize()}:</strong> "
+                f"Temperature: {temperature}°F, {description}, {wind_description}</li>\n"
+            )
+        email_body += "</ul>\n</li>\n"
+    
+    email_body += "</ul>\n"
     
     return email_body
 
 def check_rain_forecast():
-    # Get the weather report
-    weather_report = get_weather_forecast()
+    # Get the weather report and check if rain is forecasted for tomorrow
+    weather_report, rain_forecasted_for_tomorrow = get_weather_forecast()
     
     if weather_report:
-        # Create the detailed weather report
-        email_body = create_weather_report(weather_report)
-        
-        # Check if rain is in the forecast
-        rain_expected = any('rain' in report['main'].lower() for report in weather_report)
-        
-        if rain_expected:
+        # Only send an email if rain is forecasted for tomorrow
+        if rain_forecasted_for_tomorrow:
+            email_body = create_weather_report(weather_report)
             subject = "Weather Alert: Rain Expected Tomorrow"
-            # Send email with detailed weather report
             send_email(subject, email_body)
-        
+        else:
+            print("No rain forecasted for tomorrow.")
     else:
-        print("No weather data available for tomorrow.")
+        print("No weather data available.")
 
 if __name__ == "__main__":
     check_rain_forecast()
