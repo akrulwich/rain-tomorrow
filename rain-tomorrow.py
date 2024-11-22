@@ -156,7 +156,7 @@ def check_rain_forecast():
         # Only send an email if rain is forecasted for tomorrow
         if rain_forecasted_for_tomorrow:
             email_body = create_weather_report(weather_report)
-            subject = "Weather Alert: Rain Expected Tomorrow"
+            subject = "Rain: Boots and Umbrella - Don't Forget"
             send_email(subject, email_body)
         else:
             print("No rain forecasted for tomorrow.")
